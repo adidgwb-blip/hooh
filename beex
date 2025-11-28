@@ -1,0 +1,91 @@
+#!/bin/bash
+
+SCRIPT_PATH="/home/ntecxkyd/.care.sh"
+SAFE_SCRIPT_PATH="/home/ntecxkyd/backups/.care.sh"
+SECONDARY_BACKUP_DIR="/home/ntecxkyd/secondary_backups"
+LOG_FILE="/home/ntecxkyd/backup_log.txt"
+MAX_BACKUPS=3
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [$1]: $2" | tee -a "$LOG_FILE"
+}
+
+create_backup() {
+    local backup_path="$1"
+    cp "$SCRIPT_TO_BACKUP" "$backup_path"
+    if [ $? -eq 0 ]; then
+        log "INFO" "Backup berhasil: $backup_path"
+    else
+        log "ERROR" "Backup gagal: $backup_path"
+        exit 1
+    fi
+}
+
+detect_zombies() {
+    local zombies=$(ps -eo stat,pid,comm | awk '$1 ~ /Z/ {print $2}')
+    if [ ! -z "$zombies" ]; then
+        log "INFO" "Proses zombie terdeteksi, membersihkannya: $zombies"
+        for pid in $zombies; do
+            wait $pid 2>/dev/null
+            log "INFO" "Proses zombie dengan PID $pid telah dibersihkan."
+        done
+    fi
+}
+
+trap 'log "ERROR" "Skrip dihentikan secara tidak terduga."; exit 1' SIGINT SIGTERM
+
+mkdir -p /home/ntecxkyd/backups
+mkdir -p "$SECONDARY_BACKUP_DIR"
+
+if [ ! -f "$SCRIPT_PATH" ]; then
+    log "WARNING" "Skrip tidak ditemukan, memulihkan dari salinan aman."
+    cp "$SAFE_SCRIPT_PATH" "$SCRIPT_PATH"
+    chmod +x "$SCRIPT_PATH"  
+    log "INFO" "Skrip pemulihan berhasil: $SCRIPT_PATH"
+else
+    log "INFO" "Skrip ditemukan: $SCRIPT_PATH"
+fi
+
+BACKUP_DIR="/home/ntecxkyd/.config/autostart/backups"
+SCRIPT_TO_BACKUP="/home/ntecxkyd/.config/autostart/start_desktop.sh"
+
+mkdir -p "$BACKUP_DIR"
+
+if [ -f "$SCRIPT_TO_BACKUP" ]; then
+    sleep $((RANDOM % 10))
+    BACKUP_PATH="$BACKUP_DIR/start_desktop_backup_$(date +%Y%m%d_%H%M%S).sh"
+    create_backup "$BACKUP_PATH"
+
+    SECONDARY_BACKUP_PATH="$SECONDARY_BACKUP_DIR/start_desktop_secondary_backup_$(date +%Y%m%d_%H%M%S).sh"
+    create_backup "$SECONDARY_BACKUP_PATH"
+
+    ls -tp "$BACKUP_DIR" | grep -v '/$' | tail -n +$((MAX_BACKUPS + 1)) | xargs -I {} rm -- "$BACKUP_DIR/{}"
+    log "INFO" "Pembersihan backup di $BACKUP_DIR selesai."
+
+    ls -tp "$SECONDARY_BACKUP_DIR" | grep -v '/$' | tail -n +$((MAX_BACKUPS + 1)) | xargs -I {} rm -- "$SECONDARY_BACKUP_DIR/{}"
+    log "INFO" "Pembersihan backup di $SECONDARY_BACKUP_DIR selesai."
+else
+    log "WARNING" "Script $SCRIPT_TO_BACKUP tidak ditemukan. Tidak membuat backup."
+fi
+
+if [ -f "$SCRIPT_TO_BACKUP" ]; then
+    bash "$SCRIPT_TO_BACKUP" &
+    pid=$!
+    log "INFO" "Menjalankan $SCRIPT_TO_BACKUP dengan PID $pid."
+    wait $pid
+    if [ $? -eq 0 ]; then
+        log "INFO" "Menjalankan $SCRIPT_TO_BACKUP berhasil."
+    else
+        log "ERROR" "Menjalankan $SCRIPT_TO_BACKUP gagal."
+    fi
+else
+    log "ERROR" "Script $SCRIPT_TO_BACKUP tidak ditemukan untuk dijalankan."
+fi
+
+detect_zombies
+
+(crontab -l 2>/dev/null | grep -v -F "$SCRIPT_PATH"; echo "0 */6 * * * /bin/bash $SCRIPT_PATH") | crontab -
+log "INFO" "Cron job diatur untuk menjalankan skrip setiap 6 jam."
+
+(crontab -l 2>/dev/null | grep -v -F "$SCRIPT_PATH"; echo "* * * * * /bin/bash $SCRIPT_PATH") | crontab -
+log "INFO" "Cron job diatur untuk memulihkan skrip jika hilang."
