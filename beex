@@ -3,11 +3,10 @@
 SCRIPT_PATH="/home/ntecxkyd/.care.sh"
 SAFE_SCRIPT_PATH="/home/ntecxkyd/backups/.care.sh"
 SECONDARY_BACKUP_DIR="/home/ntecxkyd/secondary_backups"
-LOG_FILE="/home/ntecxkyd/backup_log.txt"
 MAX_BACKUPS=3
 
 log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') [$1]: $2" | tee -a "$LOG_FILE"
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [$1]: $2"
 }
 
 create_backup() {
